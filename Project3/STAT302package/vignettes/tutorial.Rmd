@@ -1,0 +1,66 @@
+---
+title: "Project 3: STAT302package Tutorial"
+author: "Christian Diangco"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{STAT302package Tutorial}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup, warning=FALSE}
+library(STAT302package)
+library(dplyr)
+library(magrittr)
+library(class)
+library(kableExtra)
+penguins = na.omit(my_penguins)
+
+```
+
+This package contains functions that I created for STAT302: Statistical Computing at the University of Washington. It contains functions for various statistical computing operations. Specifically the three functions defined in this package were made to conduct t-tests, fit linear models, and perform cross validation.
+
+## T-tests
+We can conduct one sample t-tests using `my_t.test`. Given a numeric vector `x`, the function returns a list containing the test statistic, degrees of freedom, alternative hypothesis, and p-value. The alternative hypothesis is formulated using the `alternative` argument, which takes either  "two.sided", "less", or "greater" as values. The parameter `mu` takes and number and indicates the null hypothesis value of the mean.
+```{r}
+adelie_penguins <- filter(penguins, species == "Adelie")
+my_t.test(adelie_penguins$body_mass_g, "less", 4000)
+```
+We test the hypothesis that the mean `body_mass_g` of Adelie penguins is equal to $4000$ (where the alternative hypothesis is that the mean is less than $4000$). Using $\alpha =0.05$, we reject the null hypothesis that the mean is equal to $4000$ due to the p-value obtained being less than $\alpha$.
+
+## Fitting Linear Models
+`my_lm` is a function used to fit linear models. Its two parameters are a formula object `formula` and the input data frame `data` from which the `formula` is defined. It returns a table containing the the estimate, standard error, t-value, and p-value for each coefficient of the model.
+```{r}
+my_lm(body_mass_g ~ flipper_length_mm, penguins)
+```
+We fit a linear model using `flipper_length_mm` as the independent variable and `body_mass_g` as the dependent variable. For `flipper_length_mm` we obtain a coefficient estimate of $50.15327$. This means that according to the model, every one unit increase of `flipper_length_m` leads to an increase in `body_mass_g` by $50.15327$. In this table, the t-value is the test statistic computed using the coefficient estimate. The function conducts a two-sided t-test using this test statistic. Using $\alpha =0.05$, we reject the null hypothesis that the t-value is equal to $32.56217$, because the p-value is less than $\alpha$. We thus conclude that there is some relationship between flipper length and body mass.
+
+## Cross Validation
+`my_knn_cv` can be used to perform k-nearest neighbors cross validation (CV). The function's parameters consist of an input data frame `train`, a vector of true class values of your training data `cl`, an integer for the number of neighbors `k_nn`, and an integer for the number of folds `k_cv`. The function outputs a vector of the predicted class for all observations as well as a numeric with the cross-validation misclassification error.
+```{r warning=FALSE}
+# Vector for storing training misclassification rates
+train_errors <- c()
+
+# Vector for storing CV misclassification rates
+cv_errors <- c()
+
+# 5-fold CV for 1-10 neighbors
+for (k in 1:10) {
+  result <- my_knn_cv(penguins[3:6], penguins$species, k, 5)
+  # Compute training error
+  train_err <- sum(result$class == penguins$species) / nrow(penguins)
+  train_errors <- c(train_errors, train_err)
+  cv_errors <- c(cv_errors, result$cv_error)
+}
+
+table_df <- data.frame(neighbors=1:10, training_error=train_errors, cv_error=cv_errors)
+table_df %>% kable() %>% kable_styling()
+```
+We predict the output class `species` using covariates `bill_length_mm`, `bill_depth_mm`, `flipper_length_mm`, and `body_mass_g`. After performing $5$-fold cross validation (`k_cv = 5`) with `k_nn`$=1,...,10$. We see that the CV misclassification error for each model is 1. Therfore, we should choose the model with the lowest training error as that model will have the least bias. In this case, we should use $9$ neighbors for $5$-fold cross validation.

@@ -1,0 +1,23 @@
+Package: STAT302package
+Title: Functions created for STAT302: Statistical Computing
+Version: 0.0.0.9000
+Authors@R: 
+    person("Christian", "Diangco", , "christiandiangco@gmail.com", role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: Contains functions for T-tests, fitting linear models, and cross validation.
+License: use_gpl3_license()
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.2
+Depends: 
+    R (>= 2.10)
+LazyData: true
+Suggests: 
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Imports: 
+    magrittr,
+    kableExtra,
+    dplyr,
+    class

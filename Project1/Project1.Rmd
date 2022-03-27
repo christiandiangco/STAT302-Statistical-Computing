@@ -1,0 +1,257 @@
+---
+title: "Project 1: Data Exploration and Visualization"
+author: "Christian Diangco"
+date: "2/02/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+library(tidyverse)
+library(lubridate)
+```
+
+```{r}
+# Load data
+d <- read_csv("Building_Permits_Clean.csv")
+```
+
+In this report, we will be visualizing data on building permits from the City of Seattle from 2017 to 2021. This data includes information such as the types of permit issued, the location and date it was issued, and the contractor it was issued to. 
+
+Something I was interested in knowing was who were the top/most common contractors. The plot below displays the top 5.
+
+```{r}
+# Count the number of times each contractor appears, look at only the top 5.
+contract_counts <- d %>%
+  # Don't include NA
+  filter(!is.na(ContractorCompanyName)) %>%
+  group_by(ContractorCompanyName) %>%
+  summarize(count = n()) %>%
+  top_n(5, wt=count) %>%
+  arrange(desc(count))
+
+ggplot(data = contract_counts, aes(x=reorder(ContractorCompanyName, -count), y=count)) + 
+  geom_col() +
+  labs(title="Total Number of Permits by Contractor (2017 - 2021)",
+       x="Contractor Company Name",
+       y="Number of Permits",
+       caption="(Figure 1) Bar chart showing the number of permits by contractor from 2017 - 2021.\n Contractor company names are on the x-axis and number of permits are on the y-axis.") +
+  theme(axis.text.x=element_text(angle=45, hjust=1.0, size=7))
+```
+
+From the plot, the top five contractors with the most permits issued were Seattle School District (A&S), Seattle Housing Authority General, Seattle Parks Department, Sound Seismic, and City of Seattle F&FD, in decreasing order. Looking at this plot, the number of permits issued among the top five contractors is about 30 - 60.
+
+```{r}
+# Subset of original data only containing information for top 5 contractors.
+top5_data <- d %>%
+  filter(ContractorCompanyName %in% contract_counts$ContractorCompanyName)
+
+# Compute the total project costs for each of the top 5 contractors.
+top5_cost <- top5_data %>%
+  group_by(ContractorCompanyName) %>%
+  # Divide total cost by 1,000,000
+  summarize(total_cost = sum(EstProjectCost, na.rm=TRUE) / (10**6))
+
+ggplot(data=top5_cost,
+       aes(x=reorder(ContractorCompanyName, -total_cost), y=total_cost)) +
+  geom_col() +
+  labs(title="Total Estimated Project Cost by Contractor (2017 - 2021)",
+       x="Contractor Company Name", y="Total Cost (in millions) ($)",
+       caption="(Figure 2) Bar chart showing the total estimated project cost by contractor from 2017 - 2021. \n Contractor company names are on the x-axis and total cost is on the y-axis. Results shown \n are computed as the sum of the estimated cost of all projects by each contractor.") +
+  theme(axis.text.x=element_text(angle=45, hjust=1.0, size=7))
+
+```
+
+Now that we know who top contractors are, how much have each of their projects cost, and how does it compare to the number of permits issued? Interestingly, the ordering of contractors changed from Figure 1 to Figure 2. Despite Seattle Housing Authority General having more permits issued than Seattle Parks Department, Seattle Parks Department's projects cost about double Seattle Housing Authority General's. City of Seattle F&FD and Sound Seismic also switched positions from Figure 1 to 2. Notably, Sound Seismic's total project costs don't even reach $1,000,000, despite being issued slightly more permits than City of Seattle F&FD's. These changes are likely due to these contractors having more expensive projects on average, giving them a higher total cost despite being issued less permits.
+
+```{r}
+# Histograms of project costs for top 5 contractors.
+ggplot(data=top5_data, aes(x=EstProjectCost / (10**6))) +
+  geom_histogram(bins=30) +
+  facet_wrap(~ ContractorCompanyName) +
+  labs(title="Estimated Project Costs by Contractor (2017-2021)",
+       x="Estimated Project Cost (in millions) ($)",
+       y="Frequency",
+       caption="(Figure 3) Histograms of project costs for each of the top five contractors. Each plot \n is for a different contractor. The x-axis is the cost of a project, and the histogram bar \n length corresponds to the number of projects in that cost range.")
+```
+
+This plot gives us an idea of the distribution of project costs for each of the top contractors. For all of the contractors, a majority of their project's cost less than $1,000,000. We can also see which contractors were issued the most expensive projects. We can see that Seattle Housing Authority General, Seattle Parks Department, and Seattle School District (A&S) all have projects in the \$20,000,000 - \$30,000,000 range, with Seattle School District (A&S) being issued the most expensive project.
+
+```{r, fig.width=10}
+top5_dt <- top5_data %>%
+  # Create new column that is a copy of IssuedDate but as a column of Date objects
+  mutate(IssuedDate_dt = mdy_hm(IssuedDate))
+
+# Timeline of permits issued by contractor
+ggplot(top5_dt, aes(x=IssuedDate_dt, y=ContractorCompanyName, color=StatusCurrent)) + 
+  geom_point(alpha=0.5, size=3.5) +
+  theme(axis.text.y=element_text(angle=45, size=7)) +
+  labs(title="Timeline of Permits Issued by Contractor", color="Current Permit Status",
+       x="Date Issued", y="Contractor Company Name",
+       caption="(Figure 4) Timeline of permits issued for the top five contractors from 2017 - 2021. \n Each point represents a permit being issued, with the data issued on the x-axis and the \n contractor on the y-axis. The color of each point corresponds to the current status of the permit.")
+```
+
+I was also interested in seeing when each contractor's permits were issued and what their current status is. For all of the contractors, it appears that most of their permits were completed. However, the Seattle Parks Department does have quite a few permits that are expired. Something that is also apparent from the plot is that more permits were being issued prior to 2020. One possible explanation for this could be the 
+due to the start of the Coronavirus Pandemic.
+
+```{r, fig.width=9}
+# Count number of permits issued by each council to each of the top contractors.
+top5_council_counts <- top5_data %>%
+  # Change CouncilDistrict to characters so that color bar is not a gradient
+  mutate(CouncilDistrict_chr = as.character(CouncilDistrict)) %>%
+  group_by(ContractorCompanyName, CouncilDistrict_chr, IssuedYear) %>%
+  summarize(count=n())
+
+# Faceted bar chart for number of permits issued in each council district by contractor
+ggplot(data=top5_council_counts, aes(x=IssuedYear, y=count, fill=CouncilDistrict_chr)) +
+  geom_col(position="stack") +
+  facet_wrap(~ ContractorCompanyName) +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Permits Issued in Each Council District by Contractor", x="Year",
+       y="Count",
+       fill="Council District",
+       caption="(Figure 5) Bar charts for the number of permits issued to each of the top five contractors. \n Each plot is for a different contractor. The colors of the bars correspond to the council district the permit was issued in.")
+```
+
+I was also interested in looking at patterns between the top contractors and the council district their permits were issued in. Some possibly notable results are that in 2017, large portion of the City of Seattle F&FD's permits were issued in council district 3. Similary, A large portion of Seattle Housing Authority General's permits were issued in district 1, with district 2 not far behind. Seattle Parks Department, Seattle School District (A&S), and Sound Seismic are the only contractors among the top five who have had permits issued in all of the council districts.
+
+```{r}
+# Bar chart for estimated project cost by council district
+ggplot(data=filter(d, !is.na(CouncilDistrict)), aes(x=IssuedYear, 
+                                                    y=EstProjectCost / (10**9),                                            fill=na.omit(as.character(CouncilDistrict)))) +
+  geom_col(position="stack") +
+  scale_fill_brewer(palette="Set2") + 
+  labs(title="Total Estimated Project Cost by Council District",
+       x="Year", y="Total Estimated Project Cost (in billions) ($)",
+       fill="Council District",
+       caption="(Figure 6) Bar chart for the total estimated project cost for permits issued in each council district. \n Each bar is for a separate year, and each bar color corresponds to a different council district.")
+
+# Count number of permits issued in each council district
+council_counts <- d %>%
+  group_by(IssuedYear, CouncilDistrict) %>%
+  summarize(count = n()) %>%
+  filter(!is.na(CouncilDistrict))
+
+# Bar chart for number of permits issued in each council district
+ggplot(data=council_counts, aes(x=IssuedYear, y=count,
+                                fill=as.character(CouncilDistrict))) +
+  geom_col(position="stack") +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Total Permits Issued by Council District", x="Year",
+       y="Number of Permits Issued", fill="Council District",
+       caption="(Figure 7) Bar chart for the number of permits issued in each council district. \n Each bar is for a separate year, and each bar color corresponds to a different council district.")
+```
+
+Similar to Figure 1 and Figure 2, I wanted to see the total permits issed and total project costs by council district. These plots differ in that they have time as another dimension. Interestingly, each of the council districts has permits issued relatively close to the same amount per year, with the exception of council district 7, which decreased significantly in 2020-2021 from 2017-2019. Looking at total project costs, council district 7 was the most expensive by a large margin from 2017-2019, but again that changes in 2020-2021. Another interesting result is that council district 5's project costs increased by a large amount in 2021, despite theirs being among the lowest in every other year. Also, we see that total project costs including all districts was the lowest in 2020. Again, this could be due to the start of the coronavirus pandemic.
+
+From this project, I learned who the top contractors for buliding permits in Seattle are, as well as some insights into their financial and work history. I found some interesting trends, notably some possible effects to funding and workflow due to the coronavirus pandemic, which could be investigated further.
+
+**Code Appendix:**
+```{r eval=FALSE, echo=TRUE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+library(tidyverse)
+library(lubridate)
+
+# Load data
+d <- read_csv("Building_Permits_Clean.csv")
+
+# Count the number of times each contractor appears, look at only the top 5.
+contract_counts <- d %>%
+  # Don't include NA
+  filter(!is.na(ContractorCompanyName)) %>%
+  group_by(ContractorCompanyName) %>%
+  summarize(count = n()) %>%
+  top_n(5, wt=count) %>%
+  arrange(desc(count))
+
+# Bar chart for number of permits by contractor
+ggplot(data = contract_counts, aes(x=reorder(ContractorCompanyName, -count), y=count)) +
+  geom_col() +
+  labs(title="Total Number of Permits by Contractor (2017 - 2021)",
+       x="Contractor Company Name",
+       y="Number of Permits",
+       caption="(Figure 1) Bar chart showing the number of permits by contractor from 2017 - 2021.\n Contractor company names are on the x-axis and number of permits are on the y-axis.") +
+  theme(axis.text.x=element_text(angle=45, hjust=1.0, size=7))
+
+# Subset of original data only containing information for top 5 contractors.
+top5_data <- d %>%
+  filter(ContractorCompanyName %in% contract_counts$ContractorCompanyName)
+
+# Compute the total project costs for each of the top 5 contractors.
+top5_cost <- top5_data %>%
+  group_by(ContractorCompanyName) %>%
+  # Divide total cost by 1,000,000
+  summarize(total_cost = sum(EstProjectCost, na.rm=TRUE) / (10**6))
+
+# Bar chart for total estimated project cost by contractor
+ggplot(data=top5_cost,
+       aes(x=reorder(ContractorCompanyName, -total_cost), y=total_cost)) +
+  geom_col() +
+  labs(title="Total Estimated Project Cost by Contractor (2017 - 2021)",
+       x="Contractor Company Name", y="Total Cost (in millions) ($)",
+       caption="(Figure 2) Bar chart showing the total estimated project cost by contractor from 2017 - 2021. \n Contractor company names are on the x-axis and total cost is on the y-axis. Results shown \n are computed as the sum of the estimated cost of all projects by each contractor.") +
+  theme(axis.text.x=element_text(angle=45, hjust=1.0, size=7))
+
+# Histograms of project costs for top 5 contractors.
+ggplot(data=top5_data, aes(x=EstProjectCost / (10**6))) +
+  geom_histogram(bins=30) +
+  facet_wrap(~ ContractorCompanyName) +
+  labs(title="Estimated Project Costs by Contractor (2017-2021)",
+       x="Estimated Project Cost (in millions) ($)",
+       y="Frequency",
+       caption="(Figure 3) Histograms of project costs for each of the top five contractors. Each plot \n is for a different contractor. The x-axis is the cost of a project, and the histogram bar \n length corresponds to the number of projects in that cost range.")
+
+top5_dt <- top5_data %>%
+  # Create new column that is a copy of IssuedDate but as a column of Date objects
+  mutate(IssuedDate_dt = mdy_hm(IssuedDate))
+
+# Timeline of permits issued by contractor
+ggplot(top5_dt, aes(x=IssuedDate_dt, y=ContractorCompanyName, color=StatusCurrent)) + 
+  geom_point(alpha=0.5, size=3.5) +
+  theme(axis.text.y=element_text(angle=45, size=7)) +
+  labs(title="Timeline of Permits Issued by Contractor", color="Current Permit Status",
+       x="Date Issued", y="Contractor Company Name",
+       caption="(Figure 4) Timeline of permits issued for the top five contractors from 2017 - 2021. \n Each point represents a permit being issued, with the data issued on the x-axis and the \n contractor on the y-axis. The color of each point corresponds to the current status of the permit.")
+
+# Count number of permits issued by each council to each of the top contractors.
+top5_council_counts <- top5_data %>%
+  # Change CouncilDistrict to characters so that color bar is not a gradient
+  mutate(CouncilDistrict_chr = as.character(CouncilDistrict)) %>%
+  group_by(ContractorCompanyName, CouncilDistrict_chr, IssuedYear) %>%
+  summarize(count=n())
+
+# Faceted bar chart for number of permits issued in each council district by contractor
+ggplot(data=top5_council_counts, aes(x=IssuedYear, y=count, fill=CouncilDistrict_chr)) +
+  geom_col(position="stack") +
+  facet_wrap(~ ContractorCompanyName) +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Permits Issued in Each Council District by Contractor", x="Year",
+       y="Count",
+       fill="Council District",
+       caption="(Figure 5) Bar charts for the number of permits issued to each of the top five contractors. \n Each plot is for a different contractor. The colors of the bars correspond to the council district the permit was issued in.")
+
+# Bar chart for estimated project cost by council district
+ggplot(data=filter(d, !is.na(CouncilDistrict)), aes(x=IssuedYear, 
+                                                    y=EstProjectCost / (10**9),                                            fill=na.omit(as.character(CouncilDistrict)))) +
+  geom_col(position="stack") +
+  scale_fill_brewer(palette="Set2") + 
+  labs(title="Total Estimated Project Cost by Council District",
+       x="Year", y="Total Estimated Project Cost (in billions) ($)",
+       fill="Council District",
+       caption="(Figure 6) Bar chart for the total estimated project cost for permits issued in each council district. \n Each bar is for a separate year, and each bar color corresponds to a different council district.")
+
+# Count number of permits issued in each council district
+council_counts <- d %>%
+  group_by(IssuedYear, CouncilDistrict) %>%
+  summarize(count = n()) %>%
+  filter(!is.na(CouncilDistrict))
+
+# Bar chart for number of permits issued in each council district
+ggplot(data=council_counts, aes(x=IssuedYear, y=count,
+                                fill=as.character(CouncilDistrict))) +
+  geom_col(position="stack") +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Total Permits Issued by Council District", x="Year",
+       y="Number of Permits Issued", fill="Council District",
+       caption="(Figure 7) Bar chart for the number of permits issued in each council district. \n Each bar is for a separate year, and each bar color corresponds to a different council district.")
+```

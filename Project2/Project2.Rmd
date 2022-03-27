@@ -1,0 +1,275 @@
+---
+title: "Project 2: Dimension Reduction"
+author: "Christian Diangco"
+date: "2/23/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+```
+## Part 1
+My function for running PCA is defined as follows:
+
+```{r}
+# Perform PCA on a data matrix.
+# Input:
+#   - X: the data matrix that PCA will be run on.
+#   - scale: If TRUE, PCA will be run on the correlation matrix.
+#            If FALSE, PCA will be run on the covariance matrix.
+# Output:
+#   List containing principal component vectors, loadings, and variances
+run_pca <- function(X, scale) {
+  n <- dim(X)[1]
+  m <- dim(X)[2]
+  # Obtain mean and standard deviation for each variable of X
+  X_mean <- apply(X, 2, mean)
+  X_mean <- matrix(rep(X_mean, n), nrow=n, ncol=m, byrow=TRUE)
+  X_sd <- apply(X, 2, sd)
+  X_sd <- matrix(rep(X_sd, n), nrow=n, ncol=m, byrow=TRUE)
+  # TRUE -> PCA on centered and scaled x, FALSE -> PCA on centered but not scaled
+  if (scale){
+    X_star <- (X - X_mean) / X_sd
+  } else {
+    X_star <- X - X_mean
+  }
+  # Obtain the empirical covariance matrix for X_star, S(X_star)
+  S.X_star <- cov(X_star)
+  # Perform eigendecomposition on S.X_star and use columns of U (eigenvectors) as the loading vectors
+  eigenvectors <- eigen(S.X_star)$vectors
+  # Multiply X_star by loadings to get principal component vectors, Y
+  Y <- X_star %*% eigenvectors
+  # Create list containing principal component vectors, loadings, and variances
+  return (list(prin_comps=Y, loadings=eigenvectors, portion_var=apply(Y, 2, var)))
+}
+```
+
+Comparing output of `run_pca` and `princomp`:
+
+```{r}
+set.seed(302)
+X <- matrix(nrow = 4, ncol = 3)
+X[, 1] <- rnorm(4, mean = 0, sd = 1)
+X[, 2] <- rnorm(4, mean = 0, sd = 10)
+X[, 3] <- rnorm(4, mean = 0, sd = 15)
+
+# scale = FALSE
+run_pca(X, FALSE)
+pca_princomp <- princomp(X, cor=FALSE)
+print(pca_princomp$scores)
+print(pca_princomp$loadings)
+print(pca_princomp$sdev**2)
+
+# scale = TRUE
+run_pca(X, TRUE)
+pca_princomp <- princomp(X, cor=TRUE)
+print(pca_princomp$scores)
+print(pca_princomp$loadings)
+# Square values to get variance
+print(pca_princomp$sdev**2)
+
+```
+
+## Part 2
+I will now be using my `run_pca` function to analyze data from the [Environmental Performance Index](https://epi.yale.edu/). The dataset contains 29 different environmental indicators for 180 countries. These environmental indicators are the variables that will be used for PCA.
+
+```{r include=FALSE}
+# Load data
+d1 <- read.csv("pca_data.csv")
+d2 <- read.csv("additional_data.csv")
+```
+
+```{r include=FALSE}
+# PCA on Dataset 1, need to pass dataframe as matrix
+d1_pca <- run_pca(data.matrix(d1[-1]), TRUE)
+
+```
+
+```{r, echo=FALSE}
+# Plot loadings for first two principal components
+ggplot(mapping=aes(x=d1_pca$loadings[,1], y=d1_pca$loadings[,2])) +
+  geom_point() +
+  geom_text(aes(label=names(d1[-1])), nudge_x=.02, nudge_y=.01, size=3) +
+  labs(title="Loadings for First Two Principal Components",
+       x="Loadings for Principal Component 1",
+       y="Loadings for Principal Component 2")
+  
+```
+
+After performing PCA on the data, we can create visualizations of the results. The plot above compares the loadings for the first two principal components, with first component's loadings on the x-axis and the second's on the y-axis.
+Each of the 29 points corresponds to one of the environmental indicators from the dataset. From this plot we can compare the loadings for each variable between the first two components. This allows us to see which variables are most important for each component. For example, the magnitude of SPI, TBN, and TBG's loadings are clearly much greater for the second principal component than the first. This means that they have a greater effect on the second principal component than the first.
+
+```{r, echo=FALSE}
+# Countries to label
+countries = c("United States of America", "China", "Mexico", "Russia",
+              "United Kingdom", "India")
+# Returns row in d1 that corresponds to specified country
+# Input:
+#   - c: country
+# Output:
+#   row index for country
+find_row <- function(c) {
+  which(d1$country == c)
+}
+# Row indices for each country
+country_indices = sapply(countries, find_row)
+# Plot first two principal components
+ggplot(mapping=aes(d1_pca$prin_comps[,1], y=d1_pca$prin_comps[,2])) +
+  geom_point() +
+  geom_point(aes(x=d1_pca$prin_comps[country_indices,1],
+                 y=d1_pca$prin_comps[country_indices,2]),
+             color="red") +
+  geom_text(aes(label=countries,
+                x=d1_pca$prin_comps[country_indices,1],
+                y=d1_pca$prin_comps[country_indices,2]),
+            hjust=0,
+            vjust=1,
+            size=3) +
+  labs(title="First Two Principal Components",
+       x="Principal Component 1",
+       y="Principal Component 2")
+```
+
+We now plot the first two principal components. Again, the first principal component is on the x-axis, while the second is on the y-axis. Each point represents an observation in the dataset, i.e. a country. The points corresponding to six different countries are labeled and colored red. We can see that the United Kingdom is higher in the first principal compnent than the second. In contrast, China is higher in the second principal component than the first.
+
+```{r echo=FALSE}
+# Scree plot for the proportion of variance explained by each principal component
+ggplot(mapping=aes(x=seq(length(d1_pca$portion_var)), y=d1_pca$portion_var)) +
+  geom_point() +
+  geom_line() +
+  labs(title="Scree Plot", x="Principal Component", y="Variances")
+```
+
+Using a scree plot, we can determine the best number of principal components to use when analyzing our dataset. The scree plot aobve has the principal component number along the x-axis and its corresponding variance on the y-axis. As expected, we can see that the variance decreases as the component number increases. I think that 3 or 4 principal components would be best for this dataset, as beyond that, the difference in variance between components is quite small.
+
+```{r, echo=FALSE}
+# Additional Plot 1 - Plotting principal components with color based on region
+# Data Frame for plotting that contains first two principal components and additional info for each country
+plot_df <- data.frame(pc1=d1_pca$prin_comps[,1],
+                      pc2=d1_pca$prin_comps[,2],
+                      country=d1$country)
+# Join with second dataset
+plot_df <- left_join(plot_df, d2, by="country")
+
+ggplot(data=plot_df, mapping=aes(x=pc1, y=pc2, color=region)) +
+  geom_point(size=2) +
+  scale_color_brewer(palette="Set1") +
+  labs(title="First Two Principal Components",
+     x="Principal Component 1",
+     y="Principal Component 2",
+     color="Region")
+```
+
+Returning to our plot of the first two principal components, by adding a third variable, we can obtain new insights from the data. In this plot, each of the points is color-coded by the region its country is located in. Looking at the plot, we can see that the first principal component is able to explain some of the variabilty in the countries' regions. Looking from left to right, we can identify different colored clusters - each corresponding to a different region.
+
+```{r echo=FALSE}
+# Additional Plot 2 - Plotting principal components with color based on GDP
+ggplot(data=plot_df, mapping=aes(x=pc1, y=pc2, color=gdp)) +
+  geom_point(size=2) +
+  scale_color_continuous(low="darkgreen", high="yellow") +
+  labs(title="First Two Principal Components",
+     x="Principal Component 1",
+     y="Principal Component 2",
+     color="GDP")
+```
+
+We now look at the same plot but change the point color to correspond the country's GDP, with the color being brighter the greater the GDP (gray means the country's GDP was not reported in the dataset). We again can see variability along the first principal component axis, arguably clearer that it was for region. In general, countries with a greater GDP have more negative first principal copmonent scores and countries with a lower GDP the opposite.
+
+```{r echo=FALSE}
+# Compare first principal component to variable EPI in second dataset
+ggplot(data=plot_df, mapping=aes(x=pc1, y=EPI_cat)) +
+  geom_point() + 
+  labs(title="First Principal Component vs EPI",
+       x="Pincipal Component 1",
+       y="EPI")
+```
+
+Finally, we compare the first principal component with EPI, A composite indicator of international environmental performance made up of the 29 indicators mentioned previously. It is given as a score from 0 to 100. For this plot, the first principal component is along the x-axis and EPI is along the y-axis. Looking at the plot we can see that there is a relatively linear relationship between EPI and the frist principal component, with EPI decreasing as the component value grows. I expected to see some type of relationship between the two because the EPI is essentially a score for each point after taking all its variables into account. We obtain this range of scores created from many different combinations of variables, and since the princpal components are also combinations of those same variables, we obtain this linear relationship.
+
+**Code Appendix**:
+```{r, eval=FALSE}
+# Load data
+d1 <- read.csv("pca_data.csv")
+d2 <- read.csv("additional_data.csv")
+
+# PCA on Dataset 1, need to pass dataframe as matrix
+d1_pca <- run_pca(data.matrix(d1[-1]), TRUE)
+
+# Plot loadings for first two principal components
+ggplot(mapping=aes(x=d1_pca$loadings[,1], y=d1_pca$loadings[,2])) +
+  geom_point() +
+  geom_text(aes(label=names(d1[-1])), nudge_x=.02, nudge_y=.01, size=3) +
+  labs(title="Loadings for First Two Principal Components",
+       x="Loadings for Principal Component 1",
+       y="Loadings for Principal Component 2")
+
+# Countries to label
+countries = c("United States of America", "China", "Mexico", "Russia",
+              "United Kingdom", "India")
+# Returns row in d1 that corresponds to specified country
+# Input:
+#   - c: country
+# Output:
+#   row index for country
+find_row <- function(c) {
+  which(d1$country == c)
+}
+# Row indices for each country
+country_indices = sapply(countries, find_row)
+# Plot first two principal components
+ggplot(mapping=aes(d1_pca$prin_comps[,1], y=d1_pca$prin_comps[,2])) +
+  geom_point() +
+  geom_point(aes(x=d1_pca$prin_comps[country_indices,1],
+                 y=d1_pca$prin_comps[country_indices,2]),
+             color="red") +
+  geom_text(aes(label=countries,
+                x=d1_pca$prin_comps[country_indices,1],
+                y=d1_pca$prin_comps[country_indices,2]),
+            hjust=0,
+            vjust=1,
+            size=3) +
+  labs(title="First Two Principal Components",
+       x="Principal Component 1",
+       y="Principal Component 2")
+
+# Scree plot for the proportion of variance explained by each principal component
+ggplot(mapping=aes(x=seq(length(d1_pca$portion_var)), y=d1_pca$portion_var)) +
+  geom_point() +
+  geom_line() +
+  labs(title="Scree Plot", x="Principal Component", y="Variances")
+
+# Additional Plot 1 - Plotting principal components with color based on region
+# Data Frame for plotting that contains first two principal components and additional info for each country
+plot_df <- data.frame(pc1=d1_pca$prin_comps[,1],
+                      pc2=d1_pca$prin_comps[,2],
+                      country=d1$country)
+# Join with second dataset
+plot_df <- left_join(plot_df, d2, by="country")
+
+ggplot(data=plot_df, mapping=aes(x=pc1, y=pc2, color=region)) +
+  geom_point(size=2) +
+  scale_color_brewer(palette="Set1") +
+  labs(title="First Two Principal Components",
+     x="Principal Component 1",
+     y="Principal Component 2",
+     color="Region")
+
+# Additional Plot 2 - Plotting principal components with color based on GDP
+ggplot(data=plot_df, mapping=aes(x=pc1, y=pc2, color=gdp)) +
+  geom_point(size=2) +
+  scale_color_continuous(low="darkgreen", high="yellow") +
+  labs(title="First Two Principal Components",
+     x="Principal Component 1",
+     y="Principal Component 2",
+     color="GDP")
+
+# Compare first principal component to variable EPI in second dataset
+ggplot(data=plot_df, mapping=aes(x=pc1, y=EPI_cat)) +
+  geom_point() + 
+  labs(title="First Principal Component vs EPI",
+       x="Pincipal Component 1",
+       y="EPI")
+
+```
